@@ -373,13 +373,13 @@ namespace control_board_hardware_interface
             all_returned = true;
             for (auto i = 0u; i < hw_state_positions_.size(); i++)
             {
-                if (hw_command_positions_[i] < -0.1)
+                if (hw_command_positions_[i] < -0.01)
                 {
                     hw_command_positions_[i] += std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
                     hw_command_velocities_[i] = std::abs(hw_actuator_homing_velocities_[i]);
                     all_returned = false;
                 }
-                else if (hw_command_positions_[i] > 0.1)
+                else if (hw_command_positions_[i] > 0.01)
                 {
                     hw_command_positions_[i] -= std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
                     hw_command_velocities_[i] = -std::abs(hw_actuator_homing_velocities_[i]);
