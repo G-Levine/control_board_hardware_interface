@@ -57,6 +57,7 @@ namespace control_board_hardware_interface
             hw_actuator_kd_maxs_.push_back(std::stod(joint.parameters.at("kd_max")));
 
             // Homing parameters
+            hw_actuator_homing_stages_.push_back(std::stoi(joint.parameters.at("homing_stage")));
             hw_actuator_homing_velocities_.push_back(std::stod(joint.parameters.at("homing_velocity")));
             hw_actuator_homing_kps_.push_back(std::stod(joint.parameters.at("homing_kp")));
             hw_actuator_homing_kds_.push_back(std::stod(joint.parameters.at("homing_kd")));
@@ -280,7 +281,7 @@ namespace control_board_hardware_interface
     {
         RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Homing actuators...");
 
-        int dt_ms = 100;
+        int dt_ms = 10;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(dt_ms));
         copy_actuator_commands();
@@ -292,9 +293,9 @@ namespace control_board_hardware_interface
         for (auto i = 0u; i < hw_state_positions_.size(); i++)
         {
             hw_command_positions_[i] = hw_state_positions_[i];
-            hw_command_velocities_[i] = hw_actuator_homing_velocities_[i];
-            hw_command_kps_[i] = hw_actuator_homing_kps_[i];
-            hw_command_kds_[i] = hw_actuator_homing_kds_[i];
+            hw_command_velocities_[i] = 0.0;
+            hw_command_kps_[i] = 0.0;
+            hw_command_kds_[i] = 0.0;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(dt_ms));
@@ -310,47 +311,84 @@ namespace control_board_hardware_interface
 
         // Loop until all actuators are homed
         bool all_homed = false;
+        bool all_returned = false;
         while (!all_homed)
         {
+            // Set the homing stage to that of the lowest-stage unhomed actuator
+            int homing_stage = 999;
+            for (auto i = 0u; i < hw_actuator_homing_stages_.size(); i++)
+            {
+                if (!hw_actuator_is_homed_[i] && (hw_actuator_homing_stages_[i] < homing_stage))
+                {
+                    homing_stage = hw_actuator_homing_stages_[i];
+                }
+            }
             // Check if all actuators are homed
             all_homed = true;
             for (auto i = 0u; i < hw_state_positions_.size(); i++)
             {
-                filtered_torques[i] = (1.0 - alpha) * filtered_torques[i] + alpha * ((hw_command_positions_[i] - hw_state_positions_[i]) * hw_command_kps_[i] - hw_state_velocities_[i] * hw_command_kds_[i]);
+                if (homing_stage < hw_actuator_homing_stages_[i])
+                {
+                    hw_command_positions_[i] = hw_state_positions_[i];
+                    hw_command_velocities_[i] = 0.0;
+                    hw_command_kps_[i] = 0.0;
+                    hw_command_kds_[i] = 0.0;
+                    all_homed = false;
+                    continue;
+                } else {
+                    hw_command_kps_[i] = hw_actuator_homing_kps_[i];
+                    hw_command_kds_[i] = hw_actuator_homing_kds_[i];
+                }
                 // std::cout << "Commanded torque: " << filtered_torques[i] << std::endl;
                 // std::cout << "Current position: " << hw_state_positions_[i] << std::endl;
                 // std::cout << "Commanded position: " << hw_command_positions_[i] << std::endl;
-                if (hw_actuator_is_homed_[i])
+                if (!hw_actuator_is_homed_[i])
                 {
-                    if (hw_command_positions_[i] < -0.1)
+                    filtered_torques[i] = (1.0 - alpha) * filtered_torques[i] + alpha * ((hw_command_positions_[i] - hw_state_positions_[i]) * hw_command_kps_[i] + (hw_command_velocities_[i] - hw_state_velocities_[i]) * hw_command_kds_[i]);
+                    if (std::abs(filtered_torques[i]) >= hw_actuator_homing_torque_thresholds_[i])
                     {
-                        hw_command_positions_[i] += std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
-                        all_homed = false;
-                    }
-                    else if (hw_command_positions_[i] > 0.1)
-                    {
-                        hw_command_positions_[i] -= std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
-                        all_homed = false;
+                        hw_actuator_zero_positions_[i] = hw_state_positions_[i] - hw_actuator_homed_positions_[i];
+                        hw_command_positions_[i] = hw_actuator_homed_positions_[i];
+                        hw_command_velocities_[i] = 0.0;
+                        hw_actuator_is_homed_[i] = true;
+                        RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Homed actuator %d", i);
                     }
                     else
                     {
-                        hw_command_positions_[i] = 0.0;
+                        hw_command_positions_[i] += hw_actuator_homing_velocities_[i] * dt_ms * 0.001;
+                        hw_command_velocities_[i] = hw_actuator_homing_velocities_[i];
+                        all_homed = false;
                     }
                 }
-                else if (std::abs(filtered_torques[i]) >= hw_actuator_homing_torque_thresholds_[i])
+            }
+            copy_actuator_commands();
+            spi_driver_run();
+            copy_actuator_states();
+
+            // Sleep for dt
+            std::this_thread::sleep_for(std::chrono::milliseconds(dt_ms));
+        }
+        while (!all_returned)
+        {
+            all_returned = true;
+            for (auto i = 0u; i < hw_state_positions_.size(); i++)
+            {
+                if (hw_command_positions_[i] < -0.1)
                 {
-                    hw_actuator_zero_positions_[i] = hw_state_positions_[i] - hw_actuator_homed_positions_[i];
-                    hw_command_positions_[i] = hw_actuator_homed_positions_[i];
-                    hw_command_velocities_[i] = 0.0;
-                    hw_actuator_is_homed_[i] = true;
-                    RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Homed actuator %d", i);
-                    all_homed = false;
+                    hw_command_positions_[i] += std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
+                    hw_command_velocities_[i] = std::abs(hw_actuator_homing_velocities_[i]);
+                    all_returned = false;
+                }
+                else if (hw_command_positions_[i] > 0.1)
+                {
+                    hw_command_positions_[i] -= std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
+                    hw_command_velocities_[i] = -std::abs(hw_actuator_homing_velocities_[i]);
+                    all_returned = false;
                 }
                 else
                 {
-                    hw_command_positions_[i] += hw_actuator_homing_velocities_[i] * dt_ms * 0.001;
-                    // hw_command_velocities_[i] = hw_actuator_homing_velocities_[i];
-                    all_homed = false;
+                    hw_command_positions_[i] = 0.0;
+                    hw_command_velocities_[i] = 0.0;
                 }
             }
             copy_actuator_commands();

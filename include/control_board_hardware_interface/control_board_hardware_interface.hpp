@@ -71,6 +71,7 @@ namespace control_board_hardware_interface
         std::vector<int> hw_actuator_can_ids_;
 
         // Actuator homing
+        std::vector<int> hw_actuator_homing_stages_;
         std::vector<double> hw_actuator_homing_velocities_;
         std::vector<double> hw_actuator_homing_kps_;
         std::vector<double> hw_actuator_homing_kds_;
