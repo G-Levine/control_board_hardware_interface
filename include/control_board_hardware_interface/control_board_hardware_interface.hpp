@@ -51,7 +51,7 @@ namespace control_board_hardware_interface
             const rclcpp::Time &time, const rclcpp::Duration &period) override;
 
     private:
-        void copy_actuator_commands();
+        void copy_actuator_commands(bool use_position_limits = false);
         void copy_actuator_states();
         void do_homing();
 

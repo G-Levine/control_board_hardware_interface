@@ -273,7 +273,7 @@ namespace control_board_hardware_interface
     hardware_interface::return_type ControlBoardHardwareInterface::write(
         const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
     {
-        copy_actuator_commands();
+        copy_actuator_commands(true);
         return hardware_interface::return_type::OK;
     }
 
@@ -401,16 +401,35 @@ namespace control_board_hardware_interface
         RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Finished homing!");
     }
 
-    void ControlBoardHardwareInterface::copy_actuator_commands()
+    void ControlBoardHardwareInterface::copy_actuator_commands(bool use_position_limits)
     {
         // Iterate through the joints
         for (auto i = 0u; i < hw_state_positions_.size(); i++)
         {
-            float cmd_pos = hw_command_positions_[i] + hw_actuator_zero_positions_[i];
-            float cmd_vel = hw_command_velocities_[i];
-            float cmd_eff = hw_command_efforts_[i];
-            float cmd_kp = hw_command_kps_[i];
-            float cmd_kd = hw_command_kds_[i];
+            double cmd_pos = hw_command_positions_[i];
+            double cmd_vel = std::clamp(hw_command_velocities_[i], -hw_actuator_velocity_maxs_[i], hw_actuator_velocity_maxs_[i]);
+            double cmd_eff = std::clamp(hw_command_efforts_[i], -hw_actuator_effort_maxs_[i], hw_actuator_effort_maxs_[i]);
+            double cmd_kp = std::clamp(hw_command_kps_[i], 0.0, hw_actuator_kp_maxs_[i]);
+            double cmd_kd = std::clamp(hw_command_kds_[i], 0.0, hw_actuator_kd_maxs_[i]);
+
+            if (use_position_limits)
+            {
+                if (cmd_pos < hw_actuator_position_mins_[i])
+                {
+                    cmd_pos = hw_actuator_position_mins_[i];
+                    cmd_vel = std::clamp(cmd_vel, 0.0, hw_actuator_velocity_maxs_[i]);
+                    cmd_eff = std::clamp(cmd_eff, 0.0, hw_actuator_effort_maxs_[i]);
+                }
+                else if (cmd_pos > hw_actuator_position_maxs_[i])
+                {
+                    cmd_pos = hw_actuator_position_maxs_[i];
+                    cmd_vel = std::clamp(cmd_vel, -hw_actuator_velocity_maxs_[i], 0.0);
+                    cmd_eff = std::clamp(cmd_eff, -hw_actuator_effort_maxs_[i], 0.0);
+                }
+                cmd_pos = std::clamp(cmd_pos, hw_actuator_position_mins_[i], hw_actuator_position_maxs_[i]);
+            }
+
+            cmd_pos += hw_actuator_zero_positions_[i];
 
             uint can_channel = hw_actuator_can_channels_[i] - 1;
             // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used to make the Cheetah code send to the CAN IDs we want)
