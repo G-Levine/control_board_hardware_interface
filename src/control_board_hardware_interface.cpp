@@ -412,7 +412,7 @@ namespace control_board_hardware_interface
             double cmd_kp = std::clamp(hw_command_kps_[i], 0.0, hw_actuator_kp_maxs_[i]);
             double cmd_kd = std::clamp(hw_command_kds_[i], 0.0, hw_actuator_kd_maxs_[i]);
 
-            if (use_position_limits)
+            if (use_position_limits && cmd_kp > 0.0)
             {
                 if (cmd_pos < hw_actuator_position_mins_[i])
                 {
