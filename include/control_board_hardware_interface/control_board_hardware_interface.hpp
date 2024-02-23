@@ -28,6 +28,8 @@ namespace control_board_hardware_interface
     public:
         RCLCPP_SHARED_PTR_DEFINITIONS(ControlBoardHardwareInterface)
 
+        virtual ~ControlBoardHardwareInterface();
+
         hardware_interface::CallbackReturn on_init(
             const hardware_interface::HardwareInfo &info) override;
 

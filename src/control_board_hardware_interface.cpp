@@ -23,6 +23,12 @@
 
 namespace control_board_hardware_interface
 {
+    ControlBoardHardwareInterface::~ControlBoardHardwareInterface()
+    {
+        // Deactivate everything when ctrl-c is pressed
+        on_deactivate(rclcpp_lifecycle::State());
+    }
+
     hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
         const hardware_interface::HardwareInfo &info)
     {
