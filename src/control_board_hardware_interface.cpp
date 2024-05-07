@@ -237,10 +237,9 @@ namespace control_board_hardware_interface
 
         // Setting the offset quaternion based on your YAW, PITCH, ROLL offsets
         offset_quat.setRPY(imu_roll_, imu_pitch_, imu_yaw_);
-        offset_quat = offset_quat.inverse();
 
         // Applying the offset to the IMU quaternion
-        corrected_quat = imu_quat * offset_quat;
+        corrected_quat = imu_quat * offset_quat.inverse();
         corrected_quat.normalize(); // Normalizing the quaternion to ensure it's a valid rotation
 
         rotation_matrix.setRotation(offset_quat);
