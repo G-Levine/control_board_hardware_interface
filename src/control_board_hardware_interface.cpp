@@ -68,6 +68,7 @@ namespace control_board_hardware_interface
             hw_actuator_homing_kps_.push_back(std::stod(joint.parameters.at("homing_kp")));
             hw_actuator_homing_kds_.push_back(std::stod(joint.parameters.at("homing_kd")));
             hw_actuator_homed_positions_.push_back(std::stod(joint.parameters.at("homed_position")));
+            hw_actuator_post_homing_positions_.push_back(std::stod(joint.parameters.at("post_homing_position")));
             hw_actuator_zero_positions_.push_back(0.0);
             hw_actuator_homing_torque_thresholds_.push_back(std::stod(joint.parameters.at("homing_torque_threshold")));
             hw_actuator_is_homed_.push_back(false);
@@ -378,13 +379,13 @@ namespace control_board_hardware_interface
             all_returned = true;
             for (auto i = 0u; i < hw_state_positions_.size(); i++)
             {
-                if (hw_command_positions_[i] < -0.01)
+                if (hw_command_positions_[i] < hw_actuator_post_homing_positions_[i] - 0.01)
                 {
                     hw_command_positions_[i] += std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
                     hw_command_velocities_[i] = std::abs(hw_actuator_homing_velocities_[i]);
                     all_returned = false;
                 }
-                else if (hw_command_positions_[i] > 0.01)
+                else if (hw_command_positions_[i] > hw_actuator_post_homing_positions_[i] + 0.01)
                 {
                     hw_command_positions_[i] -= std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
                     hw_command_velocities_[i] = -std::abs(hw_actuator_homing_velocities_[i]);
@@ -392,7 +393,7 @@ namespace control_board_hardware_interface
                 }
                 else
                 {
-                    hw_command_positions_[i] = 0.0;
+                    hw_command_positions_[i] = hw_actuator_post_homing_positions_[i];
                     hw_command_velocities_[i] = 0.0;
                 }
             }
