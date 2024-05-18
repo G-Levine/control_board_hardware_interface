@@ -53,7 +53,7 @@
 
   <ros2_control name="control_board_hardware_interface" type="system">
       <hardware>
-          <plugin>control_board_hardware_interface/Pi3HatHardwareInterface</plugin>
+          <plugin>control_board_hardware_interface/ControlBoardHardwareInterface</plugin>
       </hardware>
 
       <joint name="joint_1">

@@ -74,6 +74,7 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
   std::vector<double> hw_actuator_homing_kps_;
   std::vector<double> hw_actuator_homing_kds_;
   std::vector<double> hw_actuator_homed_positions_;
+  std::vector<double> hw_actuator_post_homing_positions_;
   std::vector<double> hw_actuator_zero_positions_;
   std::vector<double> hw_actuator_homing_torque_thresholds_;
   std::vector<bool> hw_actuator_is_homed_;

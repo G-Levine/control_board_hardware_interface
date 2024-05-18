@@ -62,6 +62,8 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
     hw_actuator_homing_kps_.push_back(std::stod(joint.parameters.at("homing_kp")));
     hw_actuator_homing_kds_.push_back(std::stod(joint.parameters.at("homing_kd")));
     hw_actuator_homed_positions_.push_back(std::stod(joint.parameters.at("homed_position")));
+    hw_actuator_post_homing_positions_.push_back(
+        std::stod(joint.parameters.at("post_homing_position")));
     hw_actuator_zero_positions_.push_back(0.0);
     hw_actuator_homing_torque_thresholds_.push_back(
         std::stod(joint.parameters.at("homing_torque_threshold")));
@@ -214,8 +216,8 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   copy_actuator_states();
 
   // Print joint position
-  // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Joint 0:
-  // %f", spi_data_->q_abad[1]);
+  // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Joint 0: %f",
+  // spi_data_->q_abad[1]);
 
   // Read the IMU
   imu_->sample(imu_output_);
@@ -232,8 +234,7 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
 
   // Applying the offset to the IMU quaternion
   corrected_quat = imu_quat * offset_quat.inverse();
-  corrected_quat.normalize();  // Normalizing the quaternion to ensure it's a
-                               // valid rotation
+  corrected_quat.normalize();  // Normalizing the quaternion to ensure it's a valid rotation
 
   rotation_matrix.setRotation(offset_quat);
 
@@ -260,12 +261,11 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   hw_state_imu_linear_acceleration_[2] = linear_acceleration.z();
 
   // Print the IMU
-  // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU: %f,
-  // %f, %f, %f, %f, %f, %f, %f, %f, %f",
-  //     imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
-  //     imu_output_.quat.w(), imu_output_.acc.x(), imu_output_.acc.y(),
-  //     imu_output_.acc.z(), imu_output_.gyro.x(), imu_output_.gyro.y(),
-  //     imu_output_.gyro.z());
+  // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU: %f, %f, %f, %f, %f, %f,
+  // %f, %f, %f, %f",
+  //     imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(), imu_output_.quat.w(),
+  //     imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z(),
+  //     imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
 
   return hardware_interface::return_type::OK;
 }
@@ -332,10 +332,8 @@ void ControlBoardHardwareInterface::do_homing() {
         hw_command_kds_[i] = hw_actuator_homing_kds_[i];
       }
       // std::cout << "Commanded torque: " << filtered_torques[i] << std::endl;
-      // std::cout << "Current position: " << hw_state_positions_[i] <<
-      // std::endl; std::cout << "Commanded position: " <<
-      // hw_command_positions_[i] << std::endl;
-      // TODO remove torque estimation since now done in copy_actuator_states
+      // std::cout << "Current position: " << hw_state_positions_[i] << std::endl;
+      // std::cout << "Commanded position: " << hw_command_positions_[i] << std::endl;
       if (!hw_actuator_is_homed_[i]) {
         filtered_torques[i] =
             (1.0 - alpha) * filtered_torques[i] +
@@ -364,16 +362,16 @@ void ControlBoardHardwareInterface::do_homing() {
   while (!all_returned) {
     all_returned = true;
     for (auto i = 0u; i < hw_state_positions_.size(); i++) {
-      if (hw_command_positions_[i] < -0.01) {
+      if (hw_command_positions_[i] < hw_actuator_post_homing_positions_[i] - 0.01) {
         hw_command_positions_[i] += std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
         hw_command_velocities_[i] = std::abs(hw_actuator_homing_velocities_[i]);
         all_returned = false;
-      } else if (hw_command_positions_[i] > 0.01) {
+      } else if (hw_command_positions_[i] > hw_actuator_post_homing_positions_[i] + 0.01) {
         hw_command_positions_[i] -= std::abs(hw_actuator_homing_velocities_[i]) * dt_ms * 0.001;
         hw_command_velocities_[i] = -std::abs(hw_actuator_homing_velocities_[i]);
         all_returned = false;
       } else {
-        hw_command_positions_[i] = 0.0;
+        hw_command_positions_[i] = hw_actuator_post_homing_positions_[i];
         hw_command_velocities_[i] = 0.0;
       }
     }
@@ -414,8 +412,8 @@ void ControlBoardHardwareInterface::copy_actuator_commands(bool use_position_lim
     cmd_pos += hw_actuator_zero_positions_[i];
 
     uint can_channel = hw_actuator_can_channels_[i] - 1;
-    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint
-    // names, just used to make the Cheetah code send to the CAN IDs we want)
+    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used to
+    // make the Cheetah code send to the CAN IDs we want)
     switch (hw_actuator_can_ids_[i]) {
       case 1:
         spi_command_->q_des_abad[can_channel] = cmd_pos;
@@ -449,8 +447,8 @@ void ControlBoardHardwareInterface::copy_actuator_states() {
     float state_vel = hw_state_velocities_[i];
 
     uint can_channel = hw_actuator_can_channels_[i] - 1;
-    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint
-    // names, just used to make the Cheetah code send to the CAN IDs we want)
+    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used to
+    // make the Cheetah code send to the CAN IDs we want)
     switch (hw_actuator_can_ids_[i]) {
       case 1:
         state_pos = spi_data_->q_abad[can_channel];
