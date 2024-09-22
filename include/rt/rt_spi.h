@@ -37,54 +37,51 @@ extern "C" {
 #define K_KNEE_OFFSET_POS 4.35f
 
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)                                \
-  (byte & 0x80 ? '1' : '0'), (byte & 0x40 ? '1' : '0'),     \
-      (byte & 0x20 ? '1' : '0'), (byte & 0x10 ? '1' : '0'), \
-      (byte & 0x08 ? '1' : '0'), (byte & 0x04 ? '1' : '0'), \
+#define BYTE_TO_BINARY(byte)                                                           \
+  (byte & 0x80 ? '1' : '0'), (byte & 0x40 ? '1' : '0'), (byte & 0x20 ? '1' : '0'),     \
+      (byte & 0x10 ? '1' : '0'), (byte & 0x08 ? '1' : '0'), (byte & 0x04 ? '1' : '0'), \
       (byte & 0x02 ? '1' : '0'), (byte & 0x01 ? '1' : '0')
 
-
 typedef struct {
-    float q_des_abad[4];
-    float q_des_hip[4];
-    float q_des_knee[4];
-    
-    float qd_des_abad[4];
-    float qd_des_hip[4];
-    float qd_des_knee[4];
-    
-    float kp_abad[4];
-    float kp_hip[4];
-    float kp_knee[4];
-    
-    float kd_abad[4];
-    float kd_hip[4];
-    float kd_knee[4];
-    
-    float tau_abad_ff[4];
-    float tau_hip_ff[4];
-    float tau_knee_ff[4];
-    
-    int32_t flags[4];
+  float q_des_abad[4];
+  float q_des_hip[4];
+  float q_des_knee[4];
+
+  float qd_des_abad[4];
+  float qd_des_hip[4];
+  float qd_des_knee[4];
+
+  float kp_abad[4];
+  float kp_hip[4];
+  float kp_knee[4];
+
+  float kd_abad[4];
+  float kd_hip[4];
+  float kd_knee[4];
+
+  float tau_abad_ff[4];
+  float tau_hip_ff[4];
+  float tau_knee_ff[4];
+
+  int32_t flags[4];
 } spi_command_t;
 
 typedef struct {
-    float q_abad[4];
-    float q_hip[4];
-    float q_knee[4];
-    float qd_abad[4];
-    float qd_hip[4];
-    float qd_knee[4];
-    int32_t flags[4];
-    int32_t spi_driver_status;
+  float q_abad[4];
+  float q_hip[4];
+  float q_knee[4];
+  float qd_abad[4];
+  float qd_hip[4];
+  float qd_knee[4];
+  int32_t flags[4];
+  int32_t spi_driver_status;
 } spi_data_t;
 
 typedef struct {
-    float tau_abad[4];
-    float tau_hip[4];
-    float tau_knee[4];
+  float tau_abad[4];
+  float tau_hip[4];
+  float tau_knee[4];
 } spi_torque_t;
-
 
 void init_spi();
 
@@ -133,7 +130,6 @@ typedef struct {
 
 } spine_data_t;
 
-#endif // END of #ifdef linux
+#endif  // END of #ifdef linux
 
 #endif
-

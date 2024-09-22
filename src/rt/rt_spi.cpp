@@ -4,14 +4,14 @@
  */
 #ifdef linux
 
+#include "rt/rt_spi.h"
+
 #include <byteswap.h>
+#include <linux/spi/spidev.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <linux/spi/spidev.h>
-#include "rt/rt_spi.h"
 // #include <lcm/lcm-cpp.hpp>
 
 unsigned char spi_mode = SPI_MODE_0;
@@ -62,27 +62,21 @@ uint32_t xor_checksum(uint32_t *data, size_t len) {
 /*!
  * Emulate the spi board to estimate the torque.
  */
-void fake_spine_control(spi_command_t *cmd, spi_data_t *data,
-                        spi_torque_t *torque_out, int board_num) {
+void fake_spine_control(spi_command_t *cmd, spi_data_t *data, spi_torque_t *torque_out,
+                        int board_num) {
   torque_out->tau_abad[board_num] =
-      cmd->kp_abad[board_num] *
-          (cmd->q_des_abad[board_num] - data->q_abad[board_num]) +
-      cmd->kd_abad[board_num] *
-          (cmd->qd_des_abad[board_num] - data->qd_abad[board_num]) +
+      cmd->kp_abad[board_num] * (cmd->q_des_abad[board_num] - data->q_abad[board_num]) +
+      cmd->kd_abad[board_num] * (cmd->qd_des_abad[board_num] - data->qd_abad[board_num]) +
       cmd->tau_abad_ff[board_num];
 
   torque_out->tau_hip[board_num] =
-      cmd->kp_hip[board_num] *
-          (cmd->q_des_hip[board_num] - data->q_hip[board_num]) +
-      cmd->kd_hip[board_num] *
-          (cmd->qd_des_hip[board_num] - data->qd_hip[board_num]) +
+      cmd->kp_hip[board_num] * (cmd->q_des_hip[board_num] - data->q_hip[board_num]) +
+      cmd->kd_hip[board_num] * (cmd->qd_des_hip[board_num] - data->qd_hip[board_num]) +
       cmd->tau_hip_ff[board_num];
 
   torque_out->tau_knee[board_num] =
-      cmd->kp_knee[board_num] *
-          (cmd->q_des_knee[board_num] - data->q_knee[board_num]) +
-      cmd->kd_knee[board_num] *
-          (cmd->qd_des_knee[board_num] - data->qd_knee[board_num]) +
+      cmd->kp_knee[board_num] * (cmd->q_des_knee[board_num] - data->q_knee[board_num]) +
+      cmd->kd_knee[board_num] * (cmd->qd_des_knee[board_num] - data->qd_knee[board_num]) +
       cmd->tau_knee_ff[board_num];
 
   const float *torque_limits = disabled_torque;
@@ -131,8 +125,7 @@ void init_spi() {
     printf("[RT SPI] command size good\n");
 
   if (data_size != K_EXPECTED_DATA_SIZE) {
-    printf("[RT SPI] Error data size is %ld, expected %d\n", data_size,
-           K_EXPECTED_DATA_SIZE);
+    printf("[RT SPI] Error data size is %ld, expected %d\n", data_size, K_EXPECTED_DATA_SIZE);
   } else
     printf("[RT SPI] data size good\n");
 
@@ -206,21 +199,15 @@ void spi_to_spine(spi_command_t *cmd, spine_cmd_t *spine_cmd, int leg_0) {
     // (cmd->q_des_knee[i+leg_0] + knee_offset[i+leg_0]) /
     // knee_side_sign[i+leg_0];
     spine_cmd->q_des_abad[i] =
-        (cmd->q_des_abad[i + leg_0] * abad_side_sign[i + leg_0]) +
-        abad_offset[i + leg_0];
+        (cmd->q_des_abad[i + leg_0] * abad_side_sign[i + leg_0]) + abad_offset[i + leg_0];
     spine_cmd->q_des_hip[i] =
-        (cmd->q_des_hip[i + leg_0] * hip_side_sign[i + leg_0]) +
-        hip_offset[i + leg_0];
+        (cmd->q_des_hip[i + leg_0] * hip_side_sign[i + leg_0]) + hip_offset[i + leg_0];
     spine_cmd->q_des_knee[i] =
-        (cmd->q_des_knee[i + leg_0] / knee_side_sign[i + leg_0]) +
-        knee_offset[i + leg_0];
+        (cmd->q_des_knee[i + leg_0] / knee_side_sign[i + leg_0]) + knee_offset[i + leg_0];
 
-    spine_cmd->qd_des_abad[i] =
-        cmd->qd_des_abad[i + leg_0] * abad_side_sign[i + leg_0];
-    spine_cmd->qd_des_hip[i] =
-        cmd->qd_des_hip[i + leg_0] * hip_side_sign[i + leg_0];
-    spine_cmd->qd_des_knee[i] =
-        cmd->qd_des_knee[i + leg_0] / knee_side_sign[i + leg_0];
+    spine_cmd->qd_des_abad[i] = cmd->qd_des_abad[i + leg_0] * abad_side_sign[i + leg_0];
+    spine_cmd->qd_des_hip[i] = cmd->qd_des_hip[i + leg_0] * hip_side_sign[i + leg_0];
+    spine_cmd->qd_des_knee[i] = cmd->qd_des_knee[i + leg_0] / knee_side_sign[i + leg_0];
 
     spine_cmd->kp_abad[i] = cmd->kp_abad[i + leg_0];
     spine_cmd->kp_hip[i] = cmd->kp_hip[i + leg_0];
@@ -230,12 +217,9 @@ void spi_to_spine(spi_command_t *cmd, spine_cmd_t *spine_cmd, int leg_0) {
     spine_cmd->kd_hip[i] = cmd->kd_hip[i + leg_0];
     spine_cmd->kd_knee[i] = cmd->kd_knee[i + leg_0];
 
-    spine_cmd->tau_abad_ff[i] =
-        cmd->tau_abad_ff[i + leg_0] * abad_side_sign[i + leg_0];
-    spine_cmd->tau_hip_ff[i] =
-        cmd->tau_hip_ff[i + leg_0] * hip_side_sign[i + leg_0];
-    spine_cmd->tau_knee_ff[i] =
-        cmd->tau_knee_ff[i + leg_0] * knee_side_sign[i + leg_0];
+    spine_cmd->tau_abad_ff[i] = cmd->tau_abad_ff[i + leg_0] * abad_side_sign[i + leg_0];
+    spine_cmd->tau_hip_ff[i] = cmd->tau_hip_ff[i + leg_0] * hip_side_sign[i + leg_0];
+    spine_cmd->tau_knee_ff[i] = cmd->tau_knee_ff[i + leg_0] * knee_side_sign[i + leg_0];
 
     spine_cmd->flags[i] = cmd->flags[i + leg_0];
   }
@@ -247,18 +231,16 @@ void spi_to_spine(spi_command_t *cmd, spine_cmd_t *spine_cmd, int leg_0) {
  */
 void spine_to_spi(spi_data_t *data, spine_data_t *spine_data, int leg_0) {
   for (int i = 0; i < 2; i++) {
-    data->q_abad[i + leg_0] = (spine_data->q_abad[i] - abad_offset[i + leg_0]) *
-                              abad_side_sign[i + leg_0];
-    data->q_hip[i + leg_0] = (spine_data->q_hip[i] - hip_offset[i + leg_0]) *
-                             hip_side_sign[i + leg_0];
-    data->q_knee[i + leg_0] = (spine_data->q_knee[i] - knee_offset[i + leg_0]) *
-                              knee_side_sign[i + leg_0];
+    data->q_abad[i + leg_0] =
+        (spine_data->q_abad[i] - abad_offset[i + leg_0]) * abad_side_sign[i + leg_0];
+    data->q_hip[i + leg_0] =
+        (spine_data->q_hip[i] - hip_offset[i + leg_0]) * hip_side_sign[i + leg_0];
+    data->q_knee[i + leg_0] =
+        (spine_data->q_knee[i] - knee_offset[i + leg_0]) * knee_side_sign[i + leg_0];
 
-    data->qd_abad[i + leg_0] =
-        spine_data->qd_abad[i] * abad_side_sign[i + leg_0];
+    data->qd_abad[i + leg_0] = spine_data->qd_abad[i] * abad_side_sign[i + leg_0];
     data->qd_hip[i + leg_0] = spine_data->qd_hip[i] * hip_side_sign[i + leg_0];
-    data->qd_knee[i + leg_0] =
-        spine_data->qd_knee[i] * knee_side_sign[i + leg_0];
+    data->qd_knee[i + leg_0] = spine_data->qd_knee[i] * knee_side_sign[i + leg_0];
 
     data->flags[i + leg_0] = spine_data->flags[i];
   }
@@ -332,13 +314,11 @@ void spi_send_receive(spi_command_t *command, spi_data_t *data) {
     // printf("\n");
 
     // do spi communication
-    int rv = ioctl(spi_board == 0 ? spi_1_fd : spi_2_fd, SPI_IOC_MESSAGE(1),
-                   &spi_message);
+    int rv = ioctl(spi_board == 0 ? spi_1_fd : spi_2_fd, SPI_IOC_MESSAGE(1), &spi_message);
     (void)rv;
 
     // flip bytes the other way
-    for (int i = 0; i < 30; i++)
-      data_d[i] = (rx_buf[i] >> 8) + ((rx_buf[i] & 0xff) << 8);
+    for (int i = 0; i < 30; i++) data_d[i] = (rx_buf[i] >> 8) + ((rx_buf[i] & 0xff) << 8);
     // data_d[i] = __bswap_16(rx_buf[i]);
 
     // printf("SPI RX BUFFER AFTER: ");
@@ -377,6 +357,8 @@ spi_command_t *get_spi_command() {
 /*!
  * Get the spi data
  */
-spi_data_t *get_spi_data() { return &spi_data_drv; }
+spi_data_t *get_spi_data() {
+  return &spi_data_drv;
+}
 
 #endif

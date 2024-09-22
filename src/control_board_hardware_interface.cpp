@@ -75,7 +75,7 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
   imu_yaw_ = std::stod(info_.sensors[0].parameters.at("yaw"));
 
   // Set up the IMU
-  imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
+  //   imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
 
   // Set up SPI
   init_spi();
@@ -220,14 +220,14 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   // spi_data_->q_abad[1]);
 
   // Read the IMU
-  imu_->sample(imu_output_);
+  //   imu_->sample(imu_output_);
 
   tf2::Quaternion imu_quat, offset_quat, corrected_quat;
   tf2::Matrix3x3 rotation_matrix;
 
   // Getting the original IMU quaternion
-  imu_quat.setValue(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
-                    imu_output_.quat.w());
+  //   imu_quat.setValue(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
+  //                     imu_output_.quat.w());
 
   // Setting the offset quaternion based on your YAW, PITCH, ROLL offsets
   offset_quat.setRPY(imu_roll_, imu_pitch_, imu_yaw_);

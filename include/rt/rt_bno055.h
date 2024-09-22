@@ -2,10 +2,15 @@
 
 #include <eigen3/Eigen/Dense>
 
-#define MAX_PACKET_SIZE 128 //Packets can be up to 32k but we don't have that much RAM.
-#define MAX_METADATA_SIZE 9 //This is in words. There can be many but we mostly only care about the first 9 (Qs, range, etc)
+// Packets can be up to 32k but we don't have that much RAM.
+#define MAX_PACKET_SIZE 128
 
-#define I2C_BUFFER_LENGTH 32 //Not sure about this one
+// This is in words. There can be many but we mostly only care about the first 9 (Qs, range,
+// etc)
+#define MAX_METADATA_SIZE 9
+
+// Not sure about this one
+#define I2C_BUFFER_LENGTH 32
 
 #define SHTP_REPORT_COMMAND_RESPONSE 0xF1
 #define SHTP_REPORT_COMMAND_REQUEST 0xF2
@@ -39,94 +44,93 @@
 #define COMMAND_OSCILLATOR 10
 #define COMMAND_CLEAR_DCD 11
 
+class BNO055 {
+ public:
+  static constexpr int I2C_ADDR = 0x4B;
 
-class BNO055
-{
-public:
-    static constexpr int I2C_ADDR = 0x4B;
+  const uint8_t CHANNEL_COMMAND = 0;
+  const uint8_t CHANNEL_EXECUTABLE = 1;
+  const uint8_t CHANNEL_CONTROL = 2;
+  const uint8_t CHANNEL_REPORTS = 3;
+  const uint8_t CHANNEL_WAKE_REPORTS = 4;
+  const uint8_t CHANNEL_GYRO = 5;
 
-    const uint8_t CHANNEL_COMMAND = 0;
-    const uint8_t CHANNEL_EXECUTABLE = 1;
-    const uint8_t CHANNEL_CONTROL = 2;
-    const uint8_t CHANNEL_REPORTS = 3;
-    const uint8_t CHANNEL_WAKE_REPORTS = 4;
-    const uint8_t CHANNEL_GYRO = 5;
-    
-    int16_t rotationVector_Q1 = 14;
-    int16_t accelerometer_Q1 = 8;
-    int16_t linear_accelerometer_Q1 = 8;
-    int16_t gyro_Q1 = 9;
-    int16_t magnetometer_Q1 = 4;
+  int16_t rotationVector_Q1 = 14;
+  int16_t accelerometer_Q1 = 8;
+  int16_t linear_accelerometer_Q1 = 8;
+  int16_t gyro_Q1 = 9;
+  int16_t magnetometer_Q1 = 4;
 
+  BNO055(int i2c_device_number);
 
-    BNO055(int i2c_device_number);
+  ~BNO055();
 
-    ~BNO055();
+  BNO055(const BNO055 &) = delete;
 
-    BNO055(const BNO055 &) = delete;
+  BNO055 &operator=(const BNO055 &) = delete;
 
-    BNO055 &operator=(const BNO055 &) = delete;
+  struct Output {
+    Eigen::Quaternionf quat;
+    Eigen::Vector3f acc;
+    Eigen::Vector3f gyro;
+  };
 
-    struct Output {
-        Eigen::Quaternionf quat;
-        Eigen::Vector3f acc;
-        Eigen::Vector3f gyro;
-    };
+  void sample(Output& result);
+  void read_vector(int addr, float scale, int num_elt, float *out);
 
-    void sample(Output& result);
-    void read_vector(int addr, float scale, int num_elt, float* out);
+ private:
+  void enter_mode(int mode);
+  void write_byte(int addr, int value);
+  bool sendPacket(uint8_t channelNumber, uint8_t dataLength);
+  void softReset(void);
+  bool receivePacket(void);
+  bool getData(uint16_t bytesRemaining);
+  bool waitForI2C(void);
+  void setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports, uint32_t specificConfig);
+  void enableRotationVector(uint16_t timeBetweenReports);
+  void enableGyro(uint16_t timeBetweenReports);
+  void enableLinearAccelerometer(uint16_t timeBetweenReports);
+  void enableAccelerometer(uint16_t timeBetweenReports);
+  void setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports);
+  bool dataAvailable(void);
+  float getQuatI();
+  float getQuatJ();
+  float getQuatK();
+  float getQuatReal();
+  float getLinAccelX();
+  float getLinAccelY();
+  float getLinAccelZ();
+  float getAccelX();
+  float getAccelY();
+  float getAccelZ();
+  float getGyroX();
+  float getGyroY();
+  float getGyroZ();
+  float qToFloat(int16_t fixedPointValue, uint8_t qPoint);
+  void parseInputReport(void);
+  void parseCommandReport(void);
 
-private:
-    void enter_mode(int mode);
-    void write_byte(int addr, int value);
-    bool sendPacket(uint8_t channelNumber, uint8_t dataLength);
-    void softReset(void);
-    bool receivePacket(void);
-    bool getData(uint16_t bytesRemaining);
-    bool waitForI2C(void);
-    void setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports, uint32_t specificConfig);
-    void enableRotationVector(uint16_t timeBetweenReports);
-    void enableGyro(uint16_t timeBetweenReports);
-    void enableLinearAccelerometer(uint16_t timeBetweenReports);
-    void enableAccelerometer(uint16_t timeBetweenReports);
-    void setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports);
-    bool dataAvailable(void);
-    float getQuatI();
-    float getQuatJ();
-    float getQuatK();
-    float getQuatReal();
-    float getLinAccelX();
-    float getLinAccelY();
-    float getLinAccelZ();
-    float getAccelX();
-    float getAccelY();
-    float getAccelZ();
-    float getGyroX();
-    float getGyroY();
-    float getGyroZ();
-    float qToFloat(int16_t fixedPointValue, uint8_t qPoint);
-    void parseInputReport(void);
-    void parseCommandReport(void);
+  int m_fd = 0;
+  bool m_okay = false;
 
+  uint16_t rawAccelX, rawAccelY, rawAccelZ, accelAccuracy;
+  uint16_t rawLinAccelX, rawLinAccelY, rawLinAccelZ, accelLinAccuracy;
+  uint16_t rawGyroX, rawGyroY, rawGyroZ, gyroAccuracy;
+  uint16_t rawMagX, rawMagY, rawMagZ, magAccuracy;
+  uint16_t rawQuatI, rawQuatJ, rawQuatK, rawQuatReal, rawQuatRadianAccuracy, quatAccuracy;
+  uint16_t stepCount;
+  uint32_t timeStamp;
+  uint8_t stabilityClassifier;
+  uint8_t activityClassifier;
+  uint8_t *_activityConfidences;  // Array that store the confidences of the 9 possible activities
+  uint8_t calibrationStatus;      // Byte R0 of ME Calibration Response
 
-    int m_fd = 0;
-    bool m_okay = false;
-
-    uint16_t rawAccelX, rawAccelY, rawAccelZ, accelAccuracy;
-    uint16_t rawLinAccelX, rawLinAccelY, rawLinAccelZ, accelLinAccuracy;
-    uint16_t rawGyroX, rawGyroY, rawGyroZ, gyroAccuracy;
-    uint16_t rawMagX, rawMagY, rawMagZ, magAccuracy;
-    uint16_t rawQuatI, rawQuatJ, rawQuatK, rawQuatReal, rawQuatRadianAccuracy, quatAccuracy;
-    uint16_t stepCount;
-    uint32_t timeStamp;
-    uint8_t stabilityClassifier;
-    uint8_t activityClassifier;
-    uint8_t *_activityConfidences; //Array that store the confidences of the 9 possible activities
-	uint8_t calibrationStatus; //Byte R0 of ME Calibration Response
-
-    uint8_t shtpHeader[4]; //Each packet has a header of 4 bytes
-    uint8_t shtpData[MAX_PACKET_SIZE];
-    uint8_t sequenceNumber[6] = {0, 0, 0, 0, 0, 0}; //There are 6 com channels. Each channel has its own seqnum
-    uint8_t commandSequenceNumber = 0; //Commands have a seqNum as well. These are inside command packet, the header uses its own seqNum per channel
-    uint32_t metaData[MAX_METADATA_SIZE]; //There is more than 10 words in a metadata record but we'll stop at Q point 3
+  uint8_t shtpHeader[4];  // Each packet has a header of 4 bytes
+  uint8_t shtpData[MAX_PACKET_SIZE];
+  uint8_t sequenceNumber[6] = {0, 0, 0, 0,
+                               0, 0};  // There are 6 com channels. Each channel has its own seqnum
+  uint8_t commandSequenceNumber = 0;   // Commands have a seqNum as well. These are inside command
+                                       // packet, the header uses its own seqNum per channel
+  uint32_t metaData[MAX_METADATA_SIZE];  // There is more than 10 words in a metadata record but
+                                         // we'll stop at Q point 3
 };

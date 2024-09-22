@@ -2,3 +2,6 @@
 Language: Cpp
 BasedOnStyle: Google
 ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Empty
+PointerAlignment: Left
+PointerAlignment: PAS_Left
