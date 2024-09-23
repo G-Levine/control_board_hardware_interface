@@ -1,5 +1,12 @@
 #pragma once
 
+#include <fcntl.h>
+#include <linux/i2c-dev.h>
+#include <linux/i2c.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
 #include <eigen3/Eigen/Dense>
 
 // Packets can be up to 32k but we don't have that much RAM.
@@ -75,13 +82,36 @@ class BNO055 {
     Eigen::Vector3f gyro;
   };
 
-  void sample(Output& result);
+  void sample(Output &result);
   void read_vector(int addr, float scale, int num_elt, float *out);
 
  private:
   void enter_mode(int mode);
   void write_byte(int addr, int value);
-  bool sendPacket(uint8_t channelNumber, uint8_t dataLength);
+
+  template <int dataLength>
+  bool sendPacket(uint8_t channelNumber) {
+    constexpr uint8_t packetLength = dataLength + 4;  // Add four bytes for the header
+    std::array<uint8_t, packetLength> buffer;
+
+    buffer[0] = packetLength & 0xFF;              // Packet length LSB
+    buffer[1] = packetLength >> 8;                // Packet length MSB
+    buffer[2] = channelNumber;                    // Channel number
+    buffer[3] = sequenceNumber[channelNumber]++;  // Send the sequence number, increments with each
+                                                  // packet sent, different counter for each channel
+
+    // Send the user's data packet
+    for (uint8_t i = 0; i < dataLength; i++) {
+      buffer[i + 4] = shtpData[i];
+    }
+    if (write(m_fd, buffer.data(), packetLength) != packetLength) {
+      printf("[BNO055] failed to write for sendPacket: %s\n", strerror(errno));
+      return false;
+    }
+
+    return true;
+  }
+
   void softReset(void);
   bool receivePacket(void);
   bool getData(uint16_t bytesRemaining);

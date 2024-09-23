@@ -1,13 +1,6 @@
 
 #include "rt/rt_bno055.h"
 
-#include <fcntl.h>
-#include <linux/i2c-dev.h>
-#include <linux/i2c.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
-
 #include <string>
 // #include <i2c/smbus.h>
 
@@ -41,7 +34,7 @@ BNO055::BNO055(int i2c_device_number) {
   shtpData[1] = 0;                               // Reserved
 
   // Transmit packet on channel 2, 2 bytes
-  sendPacket(CHANNEL_CONTROL, 2);
+  sendPacket<2>(CHANNEL_CONTROL);
   printf("Sent first packet\r\n");
 
   // Now we wait for response
@@ -68,33 +61,11 @@ BNO055::~BNO055() {
   close(m_fd);
 }
 
-bool BNO055::sendPacket(uint8_t channelNumber, uint8_t dataLength) {
-  uint8_t packetLength = dataLength + 4;  // Add four bytes for the header
-  uint8_t buffer[packetLength];
-
-  buffer[0] = packetLength & 0xFF;              // Packet length LSB
-  buffer[1] = packetLength >> 8;                // Packet length MSB
-  buffer[2] = channelNumber;                    // Channel number
-  buffer[3] = sequenceNumber[channelNumber]++;  // Send the sequence number, increments with each
-                                                // packet sent, different counter for each channel
-
-  // Send the user's data packet
-  for (uint8_t i = 0; i < dataLength; i++) {
-    buffer[i + 4] = shtpData[i];
-  }
-  if (write(m_fd, &buffer, packetLength) != packetLength) {
-    printf("[BNO055] failed to write for sendPacket: %s\n", strerror(errno));
-    return false;
-  }
-
-  return true;
-}
-
 void BNO055::softReset(void) {
   shtpData[0] = 1;  // Reset
 
   // Attempt to start communication with sensor
-  sendPacket(CHANNEL_EXECUTABLE, 1);  // Transmit packet on channel 1, 1 byte
+  sendPacket<1>(CHANNEL_EXECUTABLE);  // Transmit packet on channel 1, 1 byte
 
   // Read all incoming data and flush it
   std::chrono::milliseconds duration(200);  // duration of 50 milliseconds
@@ -149,8 +120,9 @@ bool BNO055::getData(uint16_t bytesRemaining) {
   // Setup a series of chunked 32 byte reads
   while (bytesRemaining > 0) {
     uint16_t numberOfBytesToRead = bytesRemaining;
-    if (numberOfBytesToRead > (I2C_BUFFER_LENGTH - 4))
+    if (numberOfBytesToRead > (I2C_BUFFER_LENGTH - 4)) {
       numberOfBytesToRead = (I2C_BUFFER_LENGTH - 4);
+    }
 
     uint8_t readBuffer[numberOfBytesToRead + 4];
 
@@ -223,7 +195,7 @@ void BNO055::setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports,
   shtpData[16] = (specificConfig >> 24) & 0xFF;       // Sensor-specific config (MSB)
 
   // Transmit packet on channel 2, 17 bytes
-  sendPacket(CHANNEL_CONTROL, 17);
+  sendPacket<17>(CHANNEL_CONTROL);
 }
 void BNO055::enableRotationVector(uint16_t timeBetweenReports) {
   setFeatureCommand(SENSOR_REPORTID_ROTATION_VECTOR, timeBetweenReports);
@@ -412,9 +384,10 @@ void BNO055::parseInputReport(void) {
     activityClassifier = shtpData[5 + 5];  // Most likely state
 
     // Load activity classification confidences into the array
-    for (uint8_t x = 0; x < 9; x++)  // Hardcoded to max of 9. TODO - bring in array size
+    for (uint8_t x = 0; x < 9; x++) {  // Hardcoded to max of 9. TODO - bring in array size
       _activityConfidences[x] =
           shtpData[5 + 6 + x];  // 5 bytes of timestamp, byte 6 is first confidence byte
+    }
   } else if (shtpData[5] == SHTP_REPORT_COMMAND_RESPONSE) {
     // The BNO080 responds with this report to command requests. It's up to use to remember which
     // command we issued.
@@ -468,26 +441,16 @@ void BNO055::parseCommandReport(void) {
 void BNO055::sample(Output &result) {
   while (dataAvailable() == true) {
   }
-  float quatI = getQuatI();
-  float quatJ = getQuatJ();
-  float quatK = getQuatK();
-  float quatReal = getQuatReal();
-  result.quat.x() = quatI;
-  result.quat.y() = quatJ;
-  result.quat.z() = quatK;
-  result.quat.w() = quatReal;
+  result.quat.x() = getQuatI();
+  result.quat.y() = getQuatJ();
+  result.quat.z() = getQuatK();
+  result.quat.w() = getQuatReal();
 
-  float accX = getAccelX();
-  float accY = getAccelY();
-  float accZ = getAccelZ();
-  result.acc[0] = accX;
-  result.acc[1] = accY;
-  result.acc[2] = accZ;
+  result.acc(0) = getAccelX();
+  result.acc(1) = getAccelY();
+  result.acc(2) = getAccelZ();
 
-  float gyrX = getGyroX();
-  float gyrY = getGyroY();
-  float gyrZ = getGyroZ();
-  result.gyro[0] = gyrX;
-  result.gyro[1] = gyrY;
-  result.gyro[2] = gyrZ;
+  result.gyro(0) = getGyroX();
+  result.gyro(1) = getGyroY();
+  result.gyro(2) = getGyroZ();
 }
