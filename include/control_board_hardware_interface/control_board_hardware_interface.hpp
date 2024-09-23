@@ -1,5 +1,4 @@
-#ifndef CONTROL_BOARD_HARDWARE_INTERFACE__CONTROL_BOARD_HARDWARE_INTERFACE_HPP_
-#define CONTROL_BOARD_HARDWARE_INTERFACE__CONTROL_BOARD_HARDWARE_INTERFACE_HPP_
+#pragma once
 
 #include <memory>
 #include <string>
@@ -129,5 +128,3 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
 };
 
 }  // namespace control_board_hardware_interface
-
-#endif  // CONTROL_BOARD_HARDWARE_INTERFACE_PUBLIC__CONTROL_BOARD_HARDWARE_INTERFACE_HPP_
