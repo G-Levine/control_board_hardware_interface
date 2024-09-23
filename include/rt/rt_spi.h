@@ -7,9 +7,12 @@
 #define _rt_spi
 
 #ifdef linux
-
 #include <fcntl.h>      //Needed for SPI port
 #include <sys/ioctl.h>  //Needed for SPI port
+
+#include <fstream>
+#include <iomanip>  // for std::setprecision
+#include <iostream>
 
 // incredibly obscure bug in SPI_IOC_MESSAGE macro is fixed by this
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
@@ -65,6 +68,22 @@ typedef struct {
 
   int32_t flags[4];
 } spi_command_t;
+
+// Overload the << operator for spi_command_t
+inline std::ostream& operator<<(std::ostream& os, const spi_command_t& cmd) {
+  // Set precision for floating point numbers
+  os << std::fixed << std::setprecision(3);
+
+  // Print each array from the struct, separated by spaces
+  for (int i = 0; i < 4; ++i) {
+    os << cmd.q_des_abad[i] << " " << cmd.q_des_hip[i] << " " << cmd.q_des_knee[i] << " "
+       << cmd.qd_des_abad[i] << " " << cmd.qd_des_hip[i] << " " << cmd.qd_des_knee[i] << " "
+       << cmd.kp_abad[i] << " " << cmd.kp_hip[i] << " " << cmd.kp_knee[i] << " " << cmd.kd_abad[i]
+       << " " << cmd.kd_hip[i] << " " << cmd.kd_knee[i] << " " << cmd.tau_abad_ff[i] << " "
+       << cmd.tau_hip_ff[i] << " " << cmd.tau_knee_ff[i] << " " << cmd.flags[i] << " ";
+  }
+  return os;
+}
 
 typedef struct {
   float q_abad[4];
