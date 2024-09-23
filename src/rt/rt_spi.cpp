@@ -55,7 +55,9 @@ const float knee_offset[4] = {0.f, 0.f, 0.f, 0.f};
  */
 uint32_t xor_checksum(uint32_t *data, size_t len) {
   uint32_t t = 0;
-  for (size_t i = 0; i < len; i++) t = t ^ data[i];
+  for (size_t i = 0; i < len; i++) {
+    t = t ^ data[i];
+  }
   return t;
 }
 
@@ -82,26 +84,33 @@ void fake_spine_control(spi_command_t *cmd, spi_data_t *data, spi_torque_t *torq
   const float *torque_limits = disabled_torque;
 
   if (cmd->flags[board_num] & 0b1) {
-    if (cmd->flags[board_num] & 0b10)
+    if (cmd->flags[board_num] & 0b10) {
       torque_limits = wimp_torque;
-    else
+    } else {
       torque_limits = max_torque;
+    }
   }
 
-  if (torque_out->tau_abad[board_num] > torque_limits[0])
+  if (torque_out->tau_abad[board_num] > torque_limits[0]) {
     torque_out->tau_abad[board_num] = torque_limits[0];
-  if (torque_out->tau_abad[board_num] < -torque_limits[0])
+  }
+  if (torque_out->tau_abad[board_num] < -torque_limits[0]) {
     torque_out->tau_abad[board_num] = -torque_limits[0];
+  }
 
-  if (torque_out->tau_hip[board_num] > torque_limits[1])
+  if (torque_out->tau_hip[board_num] > torque_limits[1]) {
     torque_out->tau_hip[board_num] = torque_limits[1];
-  if (torque_out->tau_hip[board_num] < -torque_limits[1])
+  }
+  if (torque_out->tau_hip[board_num] < -torque_limits[1]) {
     torque_out->tau_hip[board_num] = -torque_limits[1];
+  }
 
-  if (torque_out->tau_knee[board_num] > torque_limits[2])
+  if (torque_out->tau_knee[board_num] > torque_limits[2]) {
     torque_out->tau_knee[board_num] = torque_limits[2];
-  if (torque_out->tau_knee[board_num] < -torque_limits[2])
+  }
+  if (torque_out->tau_knee[board_num] < -torque_limits[2]) {
     torque_out->tau_knee[board_num] = -torque_limits[2];
+  }
 }
 
 /*!
@@ -115,19 +124,22 @@ void init_spi() {
   memset(&spi_command_drv, 0, sizeof(spi_command_drv));
   memset(&spi_data_drv, 0, sizeof(spi_data_drv));
 
-  if (pthread_mutex_init(&spi_mutex, NULL) != 0)
+  if (pthread_mutex_init(&spi_mutex, NULL) != 0) {
     printf("[ERROR: RT SPI] Failed to create spi data mutex\n");
+  }
 
   if (command_size != K_EXPECTED_COMMAND_SIZE) {
     printf("[RT SPI] Error command size is %ld, expected %d\n", command_size,
            K_EXPECTED_COMMAND_SIZE);
-  } else
+  } else {
     printf("[RT SPI] command size good\n");
+  }
 
   if (data_size != K_EXPECTED_DATA_SIZE) {
     printf("[RT SPI] Error data size is %ld, expected %d\n", data_size, K_EXPECTED_DATA_SIZE);
-  } else
+  } else {
     printf("[RT SPI] data size good\n");
+  }
 
   printf("[RT SPI] Open\n");
   spi_open();
@@ -139,49 +151,81 @@ void init_spi() {
 int spi_open() {
   int rv = 0;
   spi_1_fd = open("/dev/spidev0.0", O_RDWR);
-  if (spi_1_fd < 0) perror("[ERROR] Couldn't open spidev 0.0");
+  if (spi_1_fd < 0) {
+    perror("[ERROR] Couldn't open spidev 0.0");
+  }
   spi_2_fd = open("/dev/spidev0.1", O_RDWR);
-  if (spi_2_fd < 0) perror("[ERROR] Couldn't open spidev 0.1");
+  if (spi_2_fd < 0) {
+    perror("[ERROR] Couldn't open spidev 0.1");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_WR_MODE, &spi_mode);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_wr_mode (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_wr_mode (1)");
+  }
 
   rv = ioctl(spi_2_fd, SPI_IOC_WR_MODE, &spi_mode);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_wr_mode (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_wr_mode (2)");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_RD_MODE, &spi_mode);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_mode (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_mode (1)");
+  }
 
   rv = ioctl(spi_2_fd, SPI_IOC_RD_MODE, &spi_mode);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_mode (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_mode (2)");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits_per_word);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_wr_bits_per_word (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_wr_bits_per_word (1)");
+  }
 
   rv = ioctl(spi_2_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits_per_word);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_wr_bits_per_word (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_wr_bits_per_word (2)");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_RD_BITS_PER_WORD, &spi_bits_per_word);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_bits_per_word (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_bits_per_word (1)");
+  }
 
   rv = ioctl(spi_2_fd, SPI_IOC_RD_BITS_PER_WORD, &spi_bits_per_word);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_bits_per_word (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_bits_per_word (2)");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_wr_max_speed_hz (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_wr_max_speed_hz (1)");
+  }
   rv = ioctl(spi_2_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_wr_max_speed_hz (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_wr_max_speed_hz (2)");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_RD_MAX_SPEED_HZ, &spi_speed);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_max_speed_hz (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_max_speed_hz (1)");
+  }
   rv = ioctl(spi_2_fd, SPI_IOC_RD_MAX_SPEED_HZ, &spi_speed);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_max_speed_hz (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_max_speed_hz (2)");
+  }
 
   rv = ioctl(spi_1_fd, SPI_IOC_RD_LSB_FIRST, &lsb);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_lsb_first (1)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_lsb_first (1)");
+  }
 
   rv = ioctl(spi_2_fd, SPI_IOC_RD_LSB_FIRST, &lsb);
-  if (rv < 0) perror("[ERROR] ioctl spi_ioc_rd_lsb_first (2)");
+  if (rv < 0) {
+    perror("[ERROR] ioctl spi_ioc_rd_lsb_first (2)");
+  }
   return rv;
 }
 
@@ -246,9 +290,10 @@ void spine_to_spi(spi_data_t *data, spine_data_t *spine_data, int leg_0) {
   }
 
   uint32_t calc_checksum = xor_checksum((uint32_t *)spine_data, 14);
-  if (calc_checksum != (uint32_t)spine_data->checksum)
+  if (calc_checksum != (uint32_t)spine_data->checksum) {
     printf("SPI ERROR BAD CHECKSUM GOT 0x%hx EXPECTED 0x%hx\n", calc_checksum,
            spine_data->checksum);
+  }
   // else {
   //   printf("SPI GOOD CHECKSUM 0x%hx\n", calc_checksum);
   // }
@@ -284,8 +329,9 @@ void spi_send_receive(spi_command_t *command, spi_data_t *data) {
     memset(rx_buf, 0, K_WORDS_PER_MESSAGE * sizeof(uint16_t));
 
     // copy into tx buffer flipping bytes
-    for (int i = 0; i < K_WORDS_PER_MESSAGE; i++)
+    for (int i = 0; i < K_WORDS_PER_MESSAGE; i++) {
       tx_buf[i] = (cmd_d[i] >> 8) + ((cmd_d[i] & 0xff) << 8);
+    }
     // tx_buf[i] = __bswap_16(cmd_d[i]);
 
     // each word is two bytes long
@@ -318,7 +364,9 @@ void spi_send_receive(spi_command_t *command, spi_data_t *data) {
     (void)rv;
 
     // flip bytes the other way
-    for (int i = 0; i < 30; i++) data_d[i] = (rx_buf[i] >> 8) + ((rx_buf[i] & 0xff) << 8);
+    for (int i = 0; i < 30; i++) {
+      data_d[i] = (rx_buf[i] >> 8) + ((rx_buf[i] & 0xff) << 8);
+    }
     // data_d[i] = __bswap_16(rx_buf[i]);
 
     // printf("SPI RX BUFFER AFTER: ");
