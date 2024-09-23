@@ -20,7 +20,30 @@
 
 #define IMU_I2C_DEVICE_NUMBER 1
 
+// Overload the << operator for vector and array
+template <typename T>
+std::ostream &operator<<(std::ostream &os, const std::vector<T> &container) {
+  for (const auto &e : container) {
+    os << e << " ";
+  }
+  return os;
+}
+template <typename T, std::size_t N>
+std::ostream &operator<<(std::ostream &os, const std::array<T, N> &container) {
+  for (const auto &e : container) {
+    os << e << " ";
+  }
+  return os;
+}
+
 namespace control_board_hardware_interface {
+
+template <typename T>
+bool contains_nan(const T &container) {
+  return std::any_of(container.begin(), container.end(),
+                     [](double val) { return std::isnan(val); });
+}
+
 class ControlBoardHardwareInterface : public hardware_interface::SystemInterface {
  public:
   RCLCPP_SHARED_PTR_DEFINITIONS(ControlBoardHardwareInterface)
@@ -42,6 +65,9 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
   hardware_interface::CallbackReturn on_deactivate(
       const rclcpp_lifecycle::State &previous_state) override;
 
+  hardware_interface::CallbackReturn on_error(
+      const rclcpp_lifecycle::State &previous_state) override;
+
   hardware_interface::return_type read(const rclcpp::Time &time,
                                        const rclcpp::Duration &period) override;
 
@@ -49,9 +75,11 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
                                         const rclcpp::Duration &period) override;
 
  private:
+  void deactivate_motors();
   void copy_actuator_commands(bool use_position_limits = false);
   void copy_actuator_states();
   void do_homing();
+  bool hw_states_contains_nan();
 
   std::unique_ptr<BNO055> imu_;
   BNO055::Output imu_output_;

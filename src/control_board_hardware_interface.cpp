@@ -21,6 +21,11 @@
 #include "rclcpp/rclcpp.hpp"
 
 namespace control_board_hardware_interface {
+
+const char *RED_ANSI = "\033[1;31m";
+const char *YELLOW_ANSI = "\033[1;33m";
+const char *RESET_ANSI = "\033[0m";
+
 ControlBoardHardwareInterface::~ControlBoardHardwareInterface() {
   // Deactivate everything when ctrl-c is pressed
   on_deactivate(rclcpp_lifecycle::State());
@@ -75,7 +80,7 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
   imu_yaw_ = std::stod(info_.sensors[0].parameters.at("yaw"));
 
   // Set up the IMU
-  //   imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
+  imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
 
   // Set up SPI
   init_spi();
@@ -162,6 +167,33 @@ ControlBoardHardwareInterface::export_command_interfaces() {
   return command_interfaces;
 }
 
+bool contains_nan(const Eigen::Quaternionf &q) {
+  return std::isnan(q.x()) || std::isnan(q.y()) || std::isnan(q.z()) || std::isnan(q.w());
+}
+
+std::optional<BNO055::Output> sample_imu_multiple_attempts(BNO055 &imu, int max_samples,
+                                                           int delay_ms) {
+  /*
+   * Sample the IMU up to max_samples times until a good sample is received.
+   * A good sample is defined as a quaternion that is not near zero and not NaN.
+   */
+  BNO055::Output output;
+  for (int i = 0; i < max_samples; i++) {
+    imu.sample(output);
+    if (contains_nan(output.quat) || output.quat.isApprox(Eigen::Quaternionf(0, 0, 0, 0), 1e-6)) {
+      RCLCPP_WARN(rclcpp::get_logger("ControlBoardHardwareInterface"),
+                  "%sBad IMU sample [%f, %f, %f, %f]. Retrying...%s", YELLOW_ANSI, output.quat.x(),
+                  output.quat.y(), output.quat.z(), output.quat.w(), RESET_ANSI);
+    } else {
+      return output;
+    }
+    if (delay_ms > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    }
+  }
+  return std::nullopt;
+}
+
 hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_activate(
     const rclcpp_lifecycle::State & /*previous_state*/) {
   // copy_actuator_commands();
@@ -177,8 +209,17 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_activate(
 
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+  if (!sample_imu_multiple_attempts(*imu_, /*max_samples=*/50, /*delay_ms=*/10)) {
+    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
+                 "%sFailed to get a good IMU sample within 50 attempts. Deactivating "
+                 "motors%s",
+                 RED_ANSI, RESET_ANSI);
+    deactivate_motors();
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
+  // Enable actuators. Send the command multiple times to ensure it is received.
   for (int i = 0; i < 10; i++) {
-    // Enable actuators
     spi_command_->flags[0] = 1;
     spi_command_->flags[1] = 1;
     spi_command_->flags[2] = 1;
@@ -188,29 +229,44 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_activate(
   copy_actuator_states();
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+  // Homing
   do_homing();
 
   RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Successfully activated!");
-
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_deactivate(
-    const rclcpp_lifecycle::State & /*previous_state*/) {
+void ControlBoardHardwareInterface::deactivate_motors() {
   // Disable actuators
   spi_command_->flags[0] = 0;
   spi_command_->flags[1] = 0;
   spi_command_->flags[2] = 0;
   spi_command_->flags[3] = 0;
   spi_driver_run();
+}
 
-  RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Successfully deactivated!");
-
+hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_error(
+    [[maybe_unused]] const rclcpp_lifecycle::State &previous_state) {
+  deactivate_motors();
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_deactivate(
+    const rclcpp_lifecycle::State & /*previous_state*/) {
+  deactivate_motors();
+  RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Successfully deactivated!");
+  return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+bool ControlBoardHardwareInterface::hw_states_contains_nan() {
+  return contains_nan(hw_state_positions_) || contains_nan(hw_state_velocities_) ||
+         contains_nan(hw_state_efforts_) || contains_nan(hw_state_imu_orientation_) ||
+         contains_nan(hw_state_imu_angular_velocity_) ||
+         contains_nan(hw_state_imu_linear_acceleration_);
+}
+
 hardware_interface::return_type ControlBoardHardwareInterface::read(
-    const rclcpp::Time & /*time*/, const rclcpp::Duration &period) {
+    [[maybe_unused]] const rclcpp::Time &time, [[maybe_unused]] const rclcpp::Duration &period) {
   // Write to and read from the actuators
   spi_driver_run();
   copy_actuator_states();
@@ -219,32 +275,38 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Joint 0: %f",
   // spi_data_->q_abad[1]);
 
-  // Read the IMU
-  //   imu_->sample(imu_output_);
+  // Read the IMU. Retry up to 5 times if the sample is bad.
+  auto maybe_imu_output = sample_imu_multiple_attempts(*imu_, /*max_samples=*/5, /*delay_ms=*/1);
+  if (!maybe_imu_output) {
+    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
+                 "%sFailed to get a good IMU sample within 5 attempts. Deactivating "
+                 "motors%s",
+                 RED_ANSI, RESET_ANSI);
+    deactivate_motors();
+    return hardware_interface::return_type::ERROR;
+  }
+  imu_output_ = *maybe_imu_output;
 
-  tf2::Quaternion imu_quat, offset_quat, corrected_quat;
-  tf2::Matrix3x3 rotation_matrix;
-
-  // Getting the original IMU quaternion
-  //   imu_quat.setValue(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
-  //                     imu_output_.quat.w());
+  // Represent IMU orientation as quaternion
+  tf2::Quaternion imu_quat(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
+                           imu_output_.quat.w());
 
   // Setting the offset quaternion based on your YAW, PITCH, ROLL offsets
+  auto offset_quat = tf2::Quaternion::getIdentity();
   offset_quat.setRPY(imu_roll_, imu_pitch_, imu_yaw_);
+  tf2::Matrix3x3 offset_rotation_matrix(offset_quat);
 
   // Applying the offset to the IMU quaternion
-  corrected_quat = imu_quat * offset_quat.inverse();
+  tf2::Quaternion corrected_quat = imu_quat * offset_quat.inverse();
   corrected_quat.normalize();  // Normalizing the quaternion to ensure it's a valid rotation
-
-  rotation_matrix.setRotation(offset_quat);
 
   // Rotating the angular velocity
   tf2::Vector3 angular_velocity(imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
-  angular_velocity = rotation_matrix * angular_velocity;
+  angular_velocity = offset_rotation_matrix * angular_velocity;
 
   // Rotating the linear acceleration
   tf2::Vector3 linear_acceleration(imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z());
-  linear_acceleration = rotation_matrix * linear_acceleration;
+  linear_acceleration = offset_rotation_matrix * linear_acceleration;
 
   // Updating the state interfaces with corrected values
   hw_state_imu_orientation_[0] = corrected_quat.x();
@@ -261,11 +323,31 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   hw_state_imu_linear_acceleration_[2] = linear_acceleration.z();
 
   // Print the IMU
-  // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU: %f, %f, %f, %f, %f, %f,
-  // %f, %f, %f, %f",
+  // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU: %f, %f, %f, %f, %f,
+  // %f, %f, %f, %f, %f",
   //     imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(), imu_output_.quat.w(),
   //     imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z(),
   //     imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
+
+  // Check if any NaNs in hardware state arrays. Catches IMU issues.
+  if (hw_states_contains_nan()) {
+    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
+                 "HW state array contained NaN. Deactivating motors");
+    for (const auto &e : hw_state_imu_orientation_) {
+      std::cerr << e << " ";
+    }
+    for (const auto &e : hw_state_imu_angular_velocity_) {
+      std::cerr << e << " ";
+    }
+    for (const auto &e : hw_state_imu_linear_acceleration_) {
+      std::cerr << e << " ";
+    }
+    std::cerr << hw_state_positions_ << '\n'
+              << hw_state_velocities_ << '\n'
+              << hw_state_efforts_ << '\n';
+    deactivate_motors();
+    return hardware_interface::return_type::ERROR;
+  }
 
   return hardware_interface::return_type::OK;
 }
@@ -412,8 +494,8 @@ void ControlBoardHardwareInterface::copy_actuator_commands(bool use_position_lim
     cmd_pos += hw_actuator_zero_positions_[i];
 
     uint can_channel = hw_actuator_can_channels_[i] - 1;
-    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used to
-    // make the Cheetah code send to the CAN IDs we want)
+    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used
+    // to make the Cheetah code send to the CAN IDs we want)
     switch (hw_actuator_can_ids_[i]) {
       case 1:
         spi_command_->q_des_abad[can_channel] = cmd_pos;
@@ -447,8 +529,8 @@ void ControlBoardHardwareInterface::copy_actuator_states() {
     float state_vel = hw_state_velocities_[i];
 
     uint can_channel = hw_actuator_can_channels_[i] - 1;
-    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used to
-    // make the Cheetah code send to the CAN IDs we want)
+    // ID 1: abad, ID 2: hip, ID 3: knee (not corresponding to the actual joint names, just used
+    // to make the Cheetah code send to the CAN IDs we want)
     switch (hw_actuator_can_ids_[i]) {
       case 1:
         state_pos = spi_data_->q_abad[can_channel];
