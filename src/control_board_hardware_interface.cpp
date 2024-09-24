@@ -75,19 +75,20 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
     hw_actuator_is_homed_.push_back(false);
   }
 
-  //   if (info_.hardware_parameters.count("use_imu") &&
-  //       (info_.hardware_parameters.at("use_imu") == "false" ||
-  //        info_.hardware_parameters.at("use_imu") == "False")) {
-  //     RCLCPP_WARN(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU not enabled");
-  //   } else {
-  //     // Set up IMU parameters
-  //     imu_roll_ = std::stod(info_.sensors[0].parameters.at("roll"));
-  //     imu_pitch_ = std::stod(info_.sensors[0].parameters.at("pitch"));
-  //     imu_yaw_ = std::stod(info_.sensors[0].parameters.at("yaw"));
+  if (info_.hardware_parameters.count("use_imu") &&
+      (info_.hardware_parameters.at("use_imu") == "false" ||
+       info_.hardware_parameters.at("use_imu") == "False")) {
+    RCLCPP_WARN(rclcpp::get_logger("ControlBoardHardwareInterface"), "%sIMU not enabled%s",
+                YELLOW_ANSI, RESET_ANSI);
+  } else {
+    // Set up IMU parameters
+    imu_roll_ = std::stod(info_.sensors[0].parameters.at("roll"));
+    imu_pitch_ = std::stod(info_.sensors[0].parameters.at("pitch"));
+    imu_yaw_ = std::stod(info_.sensors[0].parameters.at("yaw"));
 
-  //     // Set up the IMU
-  //     imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
-  //   }
+    // Set up the IMU
+    imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
+  }
 
   // Set up SPI
   init_spi();
@@ -269,26 +270,26 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "Joint 0: %f",
   // spi_data_->q_abad[1]);
 
-  // Read the IMU. Retry up to 5 times if the sample is bad.
-  auto maybe_imu_output = sample_imu_multiple_attempts(*imu_, /*max_samples=*/5, /*delay_ms=*/1);
-  if (!maybe_imu_output) {
-    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
-                 "%sFailed to get a good IMU sample within 5 attempts. Deactivating "
-                 "motors%s",
-                 RED_ANSI, RESET_ANSI);
-    deactivate_motors();
-    return hardware_interface::return_type::ERROR;
-  }
-  imu_output_ = *maybe_imu_output;
-
   tf2::Quaternion corrected_quat = tf2::Quaternion::getIdentity();
   tf2::Vector3 angular_velocity(0, 0, 0);
   tf2::Vector3 linear_acceleration(0, 0, 0);
 
   if (imu_) {
+    // Read the IMU. Retry up to 5 times if the sample is bad.
+    auto maybe_imu_output = sample_imu_multiple_attempts(*imu_, /*max_samples=*/5, /*delay_ms=*/1);
+    if (!maybe_imu_output) {
+      RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
+                   "%sFailed to get a good IMU sample within 5 attempts. Deactivating "
+                   "motors%s",
+                   RED_ANSI, RESET_ANSI);
+      deactivate_motors();
+      return hardware_interface::return_type::ERROR;
+    }
+    BNO055::Output imu_output = *maybe_imu_output;
+
     // Represent IMU orientation as quaternion
-    tf2::Quaternion imu_quat(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
-                             imu_output_.quat.w());
+    tf2::Quaternion imu_quat(imu_output.quat.x(), imu_output.quat.y(), imu_output.quat.z(),
+                             imu_output.quat.w());
 
     // Setting the offset quaternion based on your YAW, PITCH, ROLL offsets
     auto offset_quat = tf2::Quaternion::getIdentity();
@@ -300,11 +301,11 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
     corrected_quat.normalize();
 
     // Rotating the angular velocity
-    tf2::Vector3 imu_ang_vel(imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
+    tf2::Vector3 imu_ang_vel(imu_output.gyro.x(), imu_output.gyro.y(), imu_output.gyro.z());
     angular_velocity = offset_rotation_matrix * imu_ang_vel;
 
     // Rotating the linear acceleration
-    tf2::Vector3 imu_acc(imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z());
+    tf2::Vector3 imu_acc(imu_output.acc.x(), imu_output.acc.y(), imu_output.acc.z());
     linear_acceleration = offset_rotation_matrix * imu_acc;
   }
 
@@ -325,9 +326,9 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   // Print the IMU
   // RCLCPP_INFO(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU: %f, %f, %f, %f, %f,
   // %f, %f, %f, %f, %f",
-  //     imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(), imu_output_.quat.w(),
-  //     imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z(),
-  //     imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
+  //     imu_output.quat.x(), imu_output.quat.y(), imu_output.quat.z(), imu_output.quat.w(),
+  //     imu_output.acc.x(), imu_output.acc.y(), imu_output.acc.z(),
+  //     imu_output.gyro.x(), imu_output.gyro.y(), imu_output.gyro.z());
 
   // Check if any NaNs in hardware state arrays. Catches IMU issues.
   if (hw_states_contains_nan()) {

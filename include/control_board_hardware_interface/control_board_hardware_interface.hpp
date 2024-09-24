@@ -81,7 +81,8 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
   bool hw_states_contains_nan();
 
   std::unique_ptr<BNO055> imu_ = nullptr;
-  BNO055::Output imu_output_;
+
+  // TODO: Refactor the horrible c-style spi code
   spi_command_t *spi_command_;
   spi_data_t *spi_data_;
 
