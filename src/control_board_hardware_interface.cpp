@@ -75,12 +75,19 @@ hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
     hw_actuator_is_homed_.push_back(false);
   }
 
-  imu_roll_ = std::stod(info_.sensors[0].parameters.at("roll"));
-  imu_pitch_ = std::stod(info_.sensors[0].parameters.at("pitch"));
-  imu_yaw_ = std::stod(info_.sensors[0].parameters.at("yaw"));
+  //   if (info_.hardware_parameters.count("use_imu") &&
+  //       (info_.hardware_parameters.at("use_imu") == "false" ||
+  //        info_.hardware_parameters.at("use_imu") == "False")) {
+  //     RCLCPP_WARN(rclcpp::get_logger("ControlBoardHardwareInterface"), "IMU not enabled");
+  //   } else {
+  //     // Set up IMU parameters
+  //     imu_roll_ = std::stod(info_.sensors[0].parameters.at("roll"));
+  //     imu_pitch_ = std::stod(info_.sensors[0].parameters.at("pitch"));
+  //     imu_yaw_ = std::stod(info_.sensors[0].parameters.at("yaw"));
 
-  // Set up the IMU
-  imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
+  //     // Set up the IMU
+  //     imu_ = std::make_unique<BNO055>(IMU_I2C_DEVICE_NUMBER);
+  //   }
 
   // Set up SPI
   init_spi();
@@ -196,20 +203,7 @@ std::optional<BNO055::Output> sample_imu_multiple_attempts(BNO055 &imu, int max_
 
 hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_activate(
     const rclcpp_lifecycle::State & /*previous_state*/) {
-  // copy_actuator_commands();
-  // for (int i = 0; i < 10; i++)
-  // {
-  //     // Disable actuators
-  //     spi_command_->flags[0] = 0;
-  //     spi_command_->flags[1] = 0;
-  //     spi_command_->flags[2] = 0;
-  //     spi_command_->flags[3] = 0;
-  //     spi_driver_run();
-  // }
-
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-  if (!sample_imu_multiple_attempts(*imu_, /*max_samples=*/50, /*delay_ms=*/10)) {
+  if (imu_ && !sample_imu_multiple_attempts(*imu_, /*max_samples=*/50, /*delay_ms=*/10)) {
     RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
                  "%sFailed to get a good IMU sample within 50 attempts. Deactivating "
                  "motors%s",
@@ -287,26 +281,32 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   }
   imu_output_ = *maybe_imu_output;
 
-  // Represent IMU orientation as quaternion
-  tf2::Quaternion imu_quat(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
-                           imu_output_.quat.w());
+  tf2::Quaternion corrected_quat = tf2::Quaternion::getIdentity();
+  tf2::Vector3 angular_velocity(0, 0, 0);
+  tf2::Vector3 linear_acceleration(0, 0, 0);
 
-  // Setting the offset quaternion based on your YAW, PITCH, ROLL offsets
-  auto offset_quat = tf2::Quaternion::getIdentity();
-  offset_quat.setRPY(imu_roll_, imu_pitch_, imu_yaw_);
-  tf2::Matrix3x3 offset_rotation_matrix(offset_quat);
+  if (imu_) {
+    // Represent IMU orientation as quaternion
+    tf2::Quaternion imu_quat(imu_output_.quat.x(), imu_output_.quat.y(), imu_output_.quat.z(),
+                             imu_output_.quat.w());
 
-  // Applying the offset to the IMU quaternion
-  tf2::Quaternion corrected_quat = imu_quat * offset_quat.inverse();
-  corrected_quat.normalize();  // Normalizing the quaternion to ensure it's a valid rotation
+    // Setting the offset quaternion based on your YAW, PITCH, ROLL offsets
+    auto offset_quat = tf2::Quaternion::getIdentity();
+    offset_quat.setRPY(imu_roll_, imu_pitch_, imu_yaw_);
+    tf2::Matrix3x3 offset_rotation_matrix(offset_quat);
 
-  // Rotating the angular velocity
-  tf2::Vector3 angular_velocity(imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
-  angular_velocity = offset_rotation_matrix * angular_velocity;
+    // Applying the offset to the IMU quaternion
+    corrected_quat = imu_quat * offset_quat.inverse();
+    corrected_quat.normalize();
 
-  // Rotating the linear acceleration
-  tf2::Vector3 linear_acceleration(imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z());
-  linear_acceleration = offset_rotation_matrix * linear_acceleration;
+    // Rotating the angular velocity
+    tf2::Vector3 imu_ang_vel(imu_output_.gyro.x(), imu_output_.gyro.y(), imu_output_.gyro.z());
+    angular_velocity = offset_rotation_matrix * imu_ang_vel;
+
+    // Rotating the linear acceleration
+    tf2::Vector3 imu_acc(imu_output_.acc.x(), imu_output_.acc.y(), imu_output_.acc.z());
+    linear_acceleration = offset_rotation_matrix * imu_acc;
+  }
 
   // Updating the state interfaces with corrected values
   hw_state_imu_orientation_[0] = corrected_quat.x();
@@ -333,18 +333,14 @@ hardware_interface::return_type ControlBoardHardwareInterface::read(
   if (hw_states_contains_nan()) {
     RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
                  "HW state array contained NaN. Deactivating motors");
-    for (const auto &e : hw_state_imu_orientation_) {
-      std::cerr << e << " ";
-    }
-    for (const auto &e : hw_state_imu_angular_velocity_) {
-      std::cerr << e << " ";
-    }
-    for (const auto &e : hw_state_imu_linear_acceleration_) {
-      std::cerr << e << " ";
-    }
-    std::cerr << hw_state_positions_ << '\n'
-              << hw_state_velocities_ << '\n'
-              << hw_state_efforts_ << '\n';
+    std::stringstream ss;
+    ss << hw_state_imu_orientation_ << '\n'
+       << hw_state_imu_angular_velocity_ << '\n'
+       << hw_state_imu_linear_acceleration_ << '\n'
+       << hw_state_positions_ << '\n'
+       << hw_state_velocities_ << '\n'
+       << hw_state_efforts_ << '\n';
+    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"), "%s", ss.str().c_str());
     deactivate_motors();
     return hardware_interface::return_type::ERROR;
   }

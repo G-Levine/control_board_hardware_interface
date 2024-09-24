@@ -80,7 +80,7 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
   void do_homing();
   bool hw_states_contains_nan();
 
-  std::unique_ptr<BNO055> imu_;
+  std::unique_ptr<BNO055> imu_ = nullptr;
   BNO055::Output imu_output_;
   spi_command_t *spi_command_;
   spi_data_t *spi_data_;
