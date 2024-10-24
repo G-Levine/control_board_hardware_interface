@@ -1,23 +1,27 @@
 #pragma once
 
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
+
 #include <memory>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "hardware_interface/handle.hpp"
 #include "hardware_interface/hardware_info.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
+#include "imu_manager.hpp"
 #include "rclcpp/clock.hpp"
 #include "rclcpp/duration.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 #include "rclcpp_lifecycle/state.hpp"
-#include "rt/rt_bno055.h"
 #include "rt/rt_spi.h"
-
-#define IMU_I2C_DEVICE_NUMBER 1
 
 // Overload the << operator for vector and array
 template <typename T>
@@ -80,7 +84,7 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
   void do_homing();
   bool hw_states_contains_nan();
 
-  std::unique_ptr<BNO055> imu_ = nullptr;
+  IMUManager imu_manager_;
 
   // TODO: Refactor the horrible c-style spi code
   spi_command_t *spi_command_;

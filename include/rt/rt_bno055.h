@@ -68,7 +68,7 @@ class BNO055 {
   int16_t gyro_Q1 = 9;
   int16_t magnetometer_Q1 = 4;
 
-  BNO055(int i2c_device_number);
+  BNO055(int i2c_device_number, uint32_t micros_between_reports);
 
   ~BNO055();
 
@@ -82,7 +82,7 @@ class BNO055 {
     Eigen::Vector3f gyro;
   };
 
-  void sample(Output &result);
+  Output sample();
   void read_vector(int addr, float scale, int num_elt, float *out);
 
  private:
@@ -116,7 +116,7 @@ class BNO055 {
   bool receivePacket(void);
   bool getData(uint16_t bytesRemaining);
   bool waitForI2C(void);
-  void setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports, uint32_t specificConfig);
+  void setFeatureCommand(uint8_t reportID, uint32_t microsBetweenReports, uint32_t specificConfig);
   void enableRotationVector(uint16_t timeBetweenReports);
   void enableGyro(uint16_t timeBetweenReports);
   void enableLinearAccelerometer(uint16_t timeBetweenReports);

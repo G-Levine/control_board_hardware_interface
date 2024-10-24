@@ -5,9 +5,10 @@
 // #include <i2c/smbus.h>
 
 #include <chrono>  // for std::chrono::milliseconds
+#include <iostream>
 #include <thread>  // for std::this_thread::sleep_for
 
-BNO055::BNO055(int i2c_device_number) {
+BNO055::BNO055(int i2c_device_number, uint32_t micros_between_reports) {
   // the name
   std::string device_name = std::string("/dev/i2c-") + std::to_string(i2c_device_number);
   printf("[BNO055] Using device name %s\n", device_name.c_str());
@@ -43,18 +44,14 @@ BNO055::BNO055(int i2c_device_number) {
       printf("Correct Product ID\r\n");
     }
   }
-  // Send data update every 2ms
-  enableRotationVector(1);
-  enableAccelerometer(1);
-  enableGyro(1);
 
-  // TODO config
-
-  // go to IMU mode
-  // if (m_okay)
-  // {
-  //     enter_mode(OPR_MODE_IMU);
-  // }
+  std::cout << "Enabling rot vec + gyro. Micros between reports: " << micros_between_reports
+            << std::endl;
+  std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  enableRotationVector(micros_between_reports);
+  // IMPORTANT: NOT ENABLING ACCELEROMETER
+  enableGyro(micros_between_reports);
+  std::this_thread::sleep_for(std::chrono::milliseconds(2));
 }
 
 BNO055::~BNO055() {
@@ -78,7 +75,7 @@ void BNO055::softReset(void) {
 }
 
 bool BNO055::receivePacket(void) {
-  const int headerLength = 4;
+  constexpr int headerLength = 4;
   uint8_t packetHeader[headerLength];
 
   // if (write(m_fd, &packetHeader, headerLength) != headerLength)
@@ -123,15 +120,14 @@ bool BNO055::getData(uint16_t bytesRemaining) {
     if (numberOfBytesToRead > (I2C_BUFFER_LENGTH - 4)) {
       numberOfBytesToRead = (I2C_BUFFER_LENGTH - 4);
     }
-
-    uint8_t readBuffer[numberOfBytesToRead + 4];
+    std::vector<uint8_t> readBuffer(numberOfBytesToRead + 4);
 
     // if (write(m_fd, &readBuffer, 4) != 4)
     // {
     //     printf("[BNO055] failed to write for getData: %s\n", strerror(errno));
     //     return false;
     // }
-    int response = read(m_fd, &readBuffer, numberOfBytesToRead + 4);
+    int response = read(m_fd, readBuffer.data(), numberOfBytesToRead + 4);
     if (response != numberOfBytesToRead + 4) {
       printf("[BNO055] failed to read bytes for getData: %s\n", strerror(errno));
       return false;
@@ -170,18 +166,14 @@ bool BNO055::waitForI2C() {
   return false;
 }
 
-void BNO055::setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports,
+void BNO055::setFeatureCommand(uint8_t reportID, uint32_t microsBetweenReports,
                                uint32_t specificConfig) {
-  long microsBetweenReports = (long)timeBetweenReports * 1000L;
-  microsBetweenReports = 2000L;
-
   shtpData[0] = SHTP_REPORT_SET_FEATURE_COMMAND;  // Set feature command. Reference page 55
   shtpData[1] = reportID;  // Feature Report ID. 0x01 = Accelerometer, 0x05 = Rotation vector
   shtpData[2] = 0;         // Feature flags
   shtpData[3] = 0;         // Change sensitivity (LSB)
   shtpData[4] = 0;         // Change sensitivity (MSB)
-  shtpData[5] =
-      (microsBetweenReports >> 0) & 0xFF;  // Report interval (LSB) in microseconds. 0x7A120 = 500ms
+  shtpData[5] = (microsBetweenReports >> 0) & 0xFF;   // Report interval (LSB) in microseconds.
   shtpData[6] = (microsBetweenReports >> 8) & 0xFF;   // Report interval
   shtpData[7] = (microsBetweenReports >> 16) & 0xFF;  // Report interval
   shtpData[8] = (microsBetweenReports >> 24) & 0xFF;  // Report interval (MSB)
@@ -216,15 +208,24 @@ void BNO055::setFeatureCommand(uint8_t reportID, uint16_t timeBetweenReports) {
 bool BNO055::dataAvailable(void) {
   if (receivePacket() == true) {
     // Check to see if this packet is a sensor reporting its data to us
-    if (shtpHeader[2] == CHANNEL_REPORTS && shtpData[0] == SHTP_REPORT_BASE_TIMESTAMP) {
-      parseInputReport();  // This will update the rawAccelX, etc variables depending on which
-                           // feature report is found
-      return (true);
+    // printf("here\n");
+    if (shtpHeader[2] == CHANNEL_REPORTS) {
+      //   printf("got channel report. shtpData[0]=%d\n", static_cast<int>(shtpData[0]));
+      if (shtpData[0] == SHTP_REPORT_BASE_TIMESTAMP) {
+        // printf("got base timestamp\n");
+        parseInputReport();  // This will update the rawAccelX, etc variables depending on which
+                             // feature report is found
+        return (true);
+      }
     } else if (shtpHeader[2] == CHANNEL_CONTROL) {
+      //   printf("got channel control\n");
       parseCommandReport();  // This will update responses to commands, calibrationStatus, etc.
       return (true);
+    } else {
+      printf("IMU got wack data\n");
     }
   }
+
   return (false);
 }
 float BNO055::getQuatI() {
@@ -333,6 +334,12 @@ void BNO055::parseInputReport(void) {
   timeStamp = ((uint32_t)shtpData[4] << (8 * 3)) | (shtpData[3] << (8 * 2)) |
               (shtpData[2] << (8 * 1)) | (shtpData[1] << (8 * 0));
 
+  uint8_t sequence_number = shtpData[5 + 1];  // Sequence number
+
+  // Is showing a new message only on updated data. And consecutive sequence numbers so none missing
+  //   std::cout << "seq #: " << static_cast<int>(sequence_number)
+  //             << " type: " << static_cast<int>(shtpData[5]) << std::endl;
+
   uint8_t status = shtpData[5 + 2] & 0x03;  // Get status bits
   uint16_t data1 = (uint16_t)shtpData[5 + 5] << 8 | shtpData[5 + 4];
   uint16_t data2 = (uint16_t)shtpData[5 + 7] << 8 | shtpData[5 + 6];
@@ -438,19 +445,23 @@ void BNO055::parseCommandReport(void) {
   // TODO additional feature reports may be strung together. Parse them all.
 }
 
-void BNO055::sample(Output &result) {
+BNO055::Output BNO055::sample() {
+  // Typically has two messages available in one call to sample()
   while (dataAvailable() == true) {
   }
+  Output result;
   result.quat.x() = getQuatI();
   result.quat.y() = getQuatJ();
   result.quat.z() = getQuatK();
   result.quat.w() = getQuatReal();
 
-  result.acc(0) = getAccelX();
-  result.acc(1) = getAccelY();
-  result.acc(2) = getAccelZ();
+  // Accelerometer currently not enabled
+  //   result.acc(0) = getAccelX();
+  //   result.acc(1) = getAccelY();
+  //   result.acc(2) = getAccelZ();
 
   result.gyro(0) = getGyroX();
   result.gyro(1) = getGyroY();
   result.gyro(2) = getGyroZ();
+  return result;
 }
