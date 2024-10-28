@@ -13,11 +13,12 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(tf2 REQUIRED)
 
-file(GLOB sources "src/*.cpp" "src/rt/*.c"  "src/rt/*.cpp")
-
 # add compile directive for shared library
 add_library(control_board_hardware_interface SHARED
-  ${sources}
+  src/control_board_hardware_interface.cpp
+  src/rt/rt_spi.cpp
+  src/rt/rt_bno055.cpp
+  src/imu_manager.cpp
 )
 
 # add include directory
