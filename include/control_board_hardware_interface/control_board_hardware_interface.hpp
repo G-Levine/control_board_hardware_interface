@@ -84,6 +84,8 @@ class ControlBoardHardwareInterface : public hardware_interface::SystemInterface
   void do_homing();
   bool hw_states_contains_nan();
 
+  int lock_fd_ = -1;  // File descriptor for lock file
+
   IMUManager imu_manager_;
 
   // TODO: Refactor the horrible c-style spi code

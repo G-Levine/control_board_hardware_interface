@@ -1,6 +1,8 @@
 #include "control_board_hardware_interface/control_board_hardware_interface.hpp"
 
+#include <fcntl.h>
 #include <sched.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
@@ -24,12 +26,32 @@ const char *YELLOW_ANSI = "\033[1;33m";
 const char *RESET_ANSI = "\033[0m";
 
 ControlBoardHardwareInterface::~ControlBoardHardwareInterface() {
+  // Release lock if we have it
+  if (lock_fd_ != -1) {
+    flock(lock_fd_, LOCK_UN);
+    close(lock_fd_);
+    unlink("/tmp/control_board_hardware.lock");  // Delete the lock file
+  }
+
   // Deactivate everything when ctrl-c is pressed
   on_deactivate(rclcpp_lifecycle::State());
 }
 
 hardware_interface::CallbackReturn ControlBoardHardwareInterface::on_init(
     const hardware_interface::HardwareInfo &info) {
+  lock_fd_ = open("/tmp/control_board_hardware.lock", O_CREAT, 0666);
+  if (lock_fd_ == -1) {
+    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"), "Failed to open lock file");
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
+  if (flock(lock_fd_, LOCK_EX | LOCK_NB) == -1) {
+    RCLCPP_ERROR(rclcpp::get_logger("ControlBoardHardwareInterface"),
+                 "Another instance is already running");
+    close(lock_fd_);
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+
   if (hardware_interface::SystemInterface::on_init(info) !=
       hardware_interface::CallbackReturn::SUCCESS) {
     return hardware_interface::CallbackReturn::ERROR;
